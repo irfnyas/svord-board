@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer';
 
 import 'package:flutter/material.dart';
 import 'package:web_socket_client/web_socket_client.dart';
@@ -26,36 +25,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   double ballY = 0;
   double ballSpeedX = 3;
   double ballSpeedY = 3;
+  double ballSize = 0; // Ball size relative to screen width
   int score = 0;
   late Timer timer;
   Color backgroundColor = Colors.yellow.shade50;
-  bool canBounce = false; // Updated flag usage for bounce control
+  bool canBounce = true; // Flag to control if the ball can bounce
+  bool hasBounced = false; // Flag to indicate if the ball has just bounced
 
   @override
   void initState() {
     super.initState();
+    _listenToWebSocket(); // Listen for WebSocket messages
     timer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       _updateBallPosition();
-    });
-    _listenToWebSocket();
-  }
-
-  void _listenToWebSocket() {
-    widget.webSocket.messages.listen((message) {
-      log('Received message in single player: $message');
-
-      if (message.contains('send-message')) {
-        final Map<String, dynamic> decodedMessage = jsonDecode(message);
-        if (decodedMessage['action'] == 'send-message' &&
-            decodedMessage['sender'] != null) {
-          final String senderName = decodedMessage['sender']['name'];
-          final String swingAction = decodedMessage['message'];
-
-          if (senderName == widget.playerName && swingAction == 'swing') {
-            _onTap(); // Attempt to bounce the ball
-          }
-        }
-      }
     });
   }
 
@@ -66,27 +48,56 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     super.dispose();
   }
 
+  void _listenToWebSocket() {
+    widget.webSocket.messages.listen((message) {
+      // Log the received message
+      print('Received message in single player: $message');
+
+      // Handle WebSocket messages with 'send-message' action
+      if (message.contains('send-message')) {
+        try {
+          final Map<String, dynamic> decodedMessage = jsonDecode(message);
+          if (decodedMessage['action'] == 'send-message' &&
+              decodedMessage['sender'] != null &&
+              decodedMessage['sender']['name'] == widget.playerName &&
+              decodedMessage['message'] == 'swing') {
+            // Simulate tap on screen if the message is from the player and action is "swing"
+            _onTap();
+          }
+        } catch (e) {
+          print(
+              'Error decoding message: $e'); // Error handling if JSON parsing fails
+        }
+      }
+    });
+  }
+
   void _updateBallPosition() {
     setState(() {
       ballX += ballSpeedX;
       ballY += ballSpeedY;
 
-      if (ballX <= 0 || ballX >= screenWidth - 20) {
+      // Ball collision with the screen borders
+      if (ballX <= 0 || ballX >= screenWidth - ballSize) {
         ballSpeedX = -ballSpeedX;
       }
       if (ballY <= 0) {
         ballSpeedY = -ballSpeedY;
       }
 
-      // Check if the ball is within the bounce threshold range
-      if (ballY >= screenHeight * 0.67) {
-        canBounce = true; // Allow bounce when in range
-      } else {
-        canBounce = false; // Disable bounce when out of range
+      // Check if the ball is within the 66% threshold area
+      if (ballY >= screenHeight * 0.66 && !hasBounced) {
+        backgroundColor =
+            Colors.red.shade50; // Change color when it's time to tap
+        canBounce = true; // Allow bounce when in the tap area
+      } else if (ballY < screenHeight * 0.66) {
+        // Reset color and bounce flag if the ball is above the threshold
+        backgroundColor = Colors.yellow.shade50;
+        hasBounced = false; // Reset bounce flag
       }
 
-      // Game Over if the ball reaches the bottom
-      if (ballY >= screenHeight - 20) {
+      // Ball reaches the bottom of the screen
+      if (ballY >= screenHeight - ballSize) {
         timer.cancel();
         _showGameOverDialog();
       }
@@ -99,7 +110,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Game Over'),
-          content: Text('Final score: $score'),
+          content: Text('Your score: $score'),
           actions: [
             TextButton(
               onPressed: () {
@@ -129,7 +140,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       ballSpeedY = 3;
       score = 0;
       backgroundColor = Colors.yellow.shade50;
-      canBounce = false;
+      canBounce = true; // Reset bounce control
+      hasBounced = false; // Reset bounce flag
       timer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
         _updateBallPosition();
       });
@@ -137,16 +149,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _onTap() {
-    if (canBounce) {
+    // Allow the bounce only if the ball is at or below 66% of the screen height and canBounce is true
+    if (ballY >= screenHeight * 0.66 && canBounce) {
       setState(() {
+        // Reverse the ball's Y direction to simulate a bounce
         ballSpeedY = -ballSpeedY;
         score++;
 
-        ballSpeedY *= 1.2; // Increase vertical speed
-        ballSpeedX *= 1.2; // Increase horizontal speed
+        // Increase the speed of the ball by 1.2 after each bounce
+        ballSpeedY *= 1.2; // Increase vertical speed by 20%
+        ballSpeedX *= 1.2; // Increase horizontal speed by 20%
 
-        backgroundColor = Colors.yellow.shade50; // Reset background color
-        canBounce = false; // Reset bounce after swing
+        backgroundColor =
+            Colors.yellow.shade50; // Immediately reset background color
+        canBounce =
+            false; // Disable further bounces until the ball goes above 66%
+        hasBounced = true; // Set flag to indicate the ball has bounced
       });
     }
   }
@@ -158,43 +176,51 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         builder: (context, constraints) {
           screenWidth = constraints.maxWidth;
           screenHeight = constraints.maxHeight;
+          ballSize =
+              screenWidth * 0.025; // Set ball size to 2.5% of screen width
 
           return GestureDetector(
             onTap: _onTap,
             child: Container(
-              color: backgroundColor,
+              color: backgroundColor, // Set background color
               child: Stack(
                 children: [
+                  // Horizontal line marking the 66% threshold
                   Positioned(
-                    top: screenHeight * 0.67,
+                    top: screenHeight * 0.66,
                     left: 0,
                     right: 0,
                     child: Container(
                       height: 2,
-                      color: Colors.grey.withOpacity(0.5),
+                      color: Colors.grey
+                          .withOpacity(0.5), // Soft grey line with transparency
                     ),
                   ),
+                  // Icon below the threshold line indicating to tap
                   Positioned(
-                    top: screenHeight * 0.67 + 5,
-                    left: screenWidth / 2 - 12,
+                    top: screenHeight * 0.66 +
+                        5, // Slightly below the threshold line
+                    left: screenWidth / 2 - 12, // Center the icon
                     child: Icon(
-                      Icons.touch_app,
-                      color: Colors.grey.withOpacity(0.5),
+                      Icons.touch_app, // Hand tap icon
+                      color: Colors.grey.withOpacity(0.5), // Soft grey color
                       size: 24,
                     ),
                   ),
+                  // Ball
                   Positioned(
                     top: ballY,
                     left: ballX,
                     child: Container(
-                      width: 20,
-                      height: 20,
+                      width: ballSize,
+                      height: ballSize,
                       decoration: const BoxDecoration(
-                        color: Colors.blue,
+                        color: Colors.blue, // Change ball color to blue
                         shape: BoxShape.circle,
                       ),
                     ),
                   ),
+                  // Score
                   Positioned(
                     top: 20,
                     left: 20,
