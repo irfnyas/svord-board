@@ -17,4 +17,6 @@ samples, guidance on mobile development, and a full API reference.
 
 ## build web for github pages
 
+```
 flutter build web --web-renderer canvaskit  --base-href="/svord-board/"
+```
