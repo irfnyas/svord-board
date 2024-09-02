@@ -23,10 +23,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   late double screenHeight;
   double ballX = 0;
   double ballY = 0;
-  double ballSpeedX = 3;
-  double ballSpeedY = 3;
+  double ballSpeedX = 3; // Default initial ball speed
+  double ballSpeedY = 3; // Default initial ball speed
   double ballSize = 0; // Ball size relative to screen width
   int score = 0;
+  int swingCount = 0; // Count of swings
+  List<double> swingMultipliers = []; // List to store swing multipliers
+  double lastMultiplier = 1.0; // Last swing multiplier
   late Timer timer;
   Color backgroundColor = Colors.yellow.shade50;
   bool canBounce = true; // Flag to control if the ball can bounce
@@ -59,10 +62,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           final Map<String, dynamic> decodedMessage = jsonDecode(message);
           if (decodedMessage['action'] == 'send-message' &&
               decodedMessage['sender'] != null &&
-              decodedMessage['sender']['name'] == widget.playerName &&
-              decodedMessage['message'] == 'swing') {
-            // Simulate tap on screen if the message is from the player and action is "swing"
-            _onTap();
+              decodedMessage['sender']['name'] == widget.playerName) {
+            // Check if the message includes the swing and multiplier, e.g., "swing,1.5"
+            final String swingMessage = decodedMessage['message'];
+            if (swingMessage.startsWith('swing')) {
+              final parts = swingMessage.split(',');
+              if (parts.length == 2) {
+                final multiplier = double.tryParse(parts[1]);
+                if (multiplier != null) {
+                  _onTap(multiplier); // Pass the multiplier to the tap handler
+                }
+              }
+            }
           }
         } catch (e) {
           print(
@@ -110,7 +121,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Game Over'),
-          content: Text('Your score: $score'),
+          content: Text(
+              'Your score: $score\nSwings: $swingCount\nMultipliers: ${swingMultipliers.join(', ')}'),
           actions: [
             TextButton(
               onPressed: () {
@@ -136,9 +148,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     setState(() {
       ballX = 0;
       ballY = 0;
-      ballSpeedX = 3;
-      ballSpeedY = 3;
+      ballSpeedX = 3; // Reset speed to 3
+      ballSpeedY = 3; // Reset speed to 3
       score = 0;
+      swingCount = 0;
+      swingMultipliers.clear();
+      lastMultiplier = 1.0;
       backgroundColor = Colors.yellow.shade50;
       canBounce = true; // Reset bounce control
       hasBounced = false; // Reset bounce flag
@@ -148,17 +163,26 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     });
   }
 
-  void _onTap() {
+  void _onTap(double multiplier) {
     // Allow the bounce only if the ball is at or below 66% of the screen height and canBounce is true
     if (ballY >= screenHeight * 0.66 && canBounce) {
       setState(() {
-        // Reverse the ball's Y direction to simulate a bounce
-        ballSpeedY = -ballSpeedY;
-        score++;
+        // Calculate the speed adjustment factor with half effect
+        double adjustmentFactor = 1 + (multiplier / lastMultiplier - 1) * 0.5;
 
-        // Increase the speed of the ball by 1.2 after each bounce
-        ballSpeedY *= 1.2; // Increase vertical speed by 20%
-        ballSpeedX *= 1.2; // Increase horizontal speed by 20%
+        // Adjust ball speed based on whether the current swing is faster or slower
+        ballSpeedY *= adjustmentFactor; // Adjust vertical speed
+        ballSpeedX *= adjustmentFactor; // Adjust horizontal speed
+
+        // Update the last multiplier for the next comparison
+        lastMultiplier = multiplier;
+
+        // Reverse the ball's Y direction to simulate a bounce
+        ballSpeedY = ballSpeedY.isNegative ? ballSpeedY : -ballSpeedY;
+
+        score++;
+        swingCount++; // Increment swing count
+        swingMultipliers.add(multiplier); // Store the swing multiplier
 
         backgroundColor =
             Colors.yellow.shade50; // Immediately reset background color
@@ -180,7 +204,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               screenWidth * 0.025; // Set ball size to 2.5% of screen width
 
           return GestureDetector(
-            onTap: _onTap,
+            onTap: () => _onTap(
+                1.0), // Default tap with a multiplier of 1.0 if no speed provided
             child: Container(
               color: backgroundColor, // Set background color
               child: Stack(
@@ -228,6 +253,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                       'Score: $score',
                       style: const TextStyle(
                           fontSize: 24, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  // Swing Count
+                  Positioned(
+                    top: 60,
+                    left: 20,
+                    child: Text(
+                      'Swings: $swingCount',
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                  ),
+                  // Last Multiplier
+                  Positioned(
+                    top: 100,
+                    left: 20,
+                    child: Text(
+                      'Last Multiplier: $lastMultiplier',
+                      style: const TextStyle(fontSize: 18),
                     ),
                   ),
                 ],
