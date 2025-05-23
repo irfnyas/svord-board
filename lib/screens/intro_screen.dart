@@ -19,6 +19,8 @@ class _IntroScreenState extends State<IntroScreen> {
   String playerOneName = '';
   String playerTwoName = '';
 
+  String _selectedGameMode = 'pingpong'; // track selected mode
+
   @override
   void initState() {
     super.initState();
@@ -98,16 +100,20 @@ class _IntroScreenState extends State<IntroScreen> {
   }
 
   void _joinRoom() {
-    webSocket!.send(jsonEncode({'action': 'join-room', 'message': 'svord'}));
+    String message = _selectedGameMode == 'pingpong' ? 'svord' : 'hunt';
+    webSocket!.send(jsonEncode({'action': 'join-room', 'message': message}));
   }
 
   @override
   void dispose() {
+    webSocket?.close();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool canStart = isConnected && playerOneName.isNotEmpty;
+
     return Scaffold(
       backgroundColor: Colors.yellow.shade50,
       body: Center(
@@ -120,30 +126,64 @@ class _IntroScreenState extends State<IntroScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: isConnected && playerOneName.isNotEmpty
-                  ? () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => GameScreen(
-                            webSocket: webSocket!,
-                            playerOneName: playerOneName,
-                            playerTwoName: playerTwoName,
-                          ),
-                        ),
-                      ).then((_) {
-                        Future.delayed(const Duration(seconds: 1), () {
-                          _connectWebSocket();
-                        });
-                      });
-                    }
-                  : null,
-              child: const Text(
-                'Start Game',
-                style: TextStyle(fontSize: 24),
+            if (canStart) ...[
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _selectedGameMode = 'pingpong';
+                  });
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => GameScreen(
+                        webSocket: webSocket!,
+                        playerOneName: playerOneName,
+                        playerTwoName: playerTwoName,
+                        gameMode: playerTwoName.isEmpty
+                            ? 'single-pingpong'
+                            : 'multi-pingpong',
+                      ),
+                    ),
+                  ).then((_) {
+                    Future.delayed(const Duration(seconds: 1), () {
+                      _connectWebSocket();
+                    });
+                  });
+                },
+                child: const Text('Start Ping Pong',
+                    style: TextStyle(fontSize: 24)),
               ),
-            ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _selectedGameMode = 'hunt';
+                  });
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => GameScreen(
+                        webSocket: webSocket!,
+                        playerOneName: playerOneName,
+                        playerTwoName: playerTwoName,
+                        gameMode: 'hunt',
+                      ),
+                    ),
+                  ).then((_) {
+                    Future.delayed(const Duration(seconds: 1), () {
+                      _connectWebSocket();
+                    });
+                  });
+                },
+                child: const Text('Start Hunt Game',
+                    style: TextStyle(fontSize: 24)),
+              ),
+            ] else ...[
+              const ElevatedButton(
+                onPressed: null,
+                child: Text('Start Game', style: TextStyle(fontSize: 24)),
+              ),
+            ],
             const SizedBox(height: 20),
             Text(
               isConnected
@@ -163,6 +203,7 @@ class _IntroScreenState extends State<IntroScreen> {
                         : Colors.orange)
                     : Colors.red,
               ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
