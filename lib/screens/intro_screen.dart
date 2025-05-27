@@ -45,7 +45,6 @@ class _IntroScreenState extends State<IntroScreen> {
         setState(() {
           isConnected = true;
         });
-        _joinRoom();
       } else {
         setState(() {
           isConnected = false;
@@ -57,12 +56,15 @@ class _IntroScreenState extends State<IntroScreen> {
     webSocket!.messages.listen((message) {
       log('Received message: $message');
 
-      if (message.contains('send-message')) {
-        final Map<String, dynamic> decodedMessage = jsonDecode(message);
-        if (decodedMessage['action'] == 'send-message' &&
-            decodedMessage['message'].toString().contains('joined the room')) {
-          final String fullMessage = decodedMessage['message'].toString();
-          final String playerName = fullMessage.split(' joined the room')[0];
+      if ('$message'.contains('user-join')) {
+        Map<String, dynamic>? decodedMessage;
+        try {
+          decodedMessage = jsonDecode(message ?? '{}');
+        } catch (_) {}
+
+        if (decodedMessage?['action'] == 'user-join') {
+          final String playerName =
+              decodedMessage?['sender']['name'] ?? 'Player';
 
           // Ignore specific player names
           if (playerName != 'pc' &&
@@ -80,11 +82,15 @@ class _IntroScreenState extends State<IntroScreen> {
         }
       }
 
-      if (message.contains('user-left')) {
-        final Map<String, dynamic> decodedMessage = jsonDecode(message);
-        if (decodedMessage['action'] == 'user-left' &&
-            decodedMessage['sender'] != null) {
-          final String senderName = decodedMessage['sender']['name'];
+      if ('$message'.contains('user-left')) {
+        Map<String, dynamic>? decodedMessage;
+        try {
+          decodedMessage = jsonDecode(message ?? '{}');
+        } catch (_) {}
+
+        if (decodedMessage?['action'] == 'user-left' &&
+            decodedMessage?['sender'] != null) {
+          final String senderName = decodedMessage?['sender']['name'];
           if (senderName == playerOneName) {
             setState(() {
               playerOneName = '';
@@ -132,6 +138,7 @@ class _IntroScreenState extends State<IntroScreen> {
                   setState(() {
                     _selectedGameMode = 'pingpong';
                   });
+                  _joinRoom();
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -159,6 +166,7 @@ class _IntroScreenState extends State<IntroScreen> {
                   setState(() {
                     _selectedGameMode = 'hunt';
                   });
+                  _joinRoom();
                   Navigator.push(
                     context,
                     MaterialPageRoute(

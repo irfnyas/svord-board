@@ -8,10 +8,10 @@ import 'package:web_socket_client/web_socket_client.dart';
 enum GameState { idle, playing, finished }
 
 class Duck {
-  double dx;
-  double dy;
-  int hDir;
-  int vDir;
+  double dx; // horizontal 0..1 (can start <0 or >1)
+  double dy; // vertical 0..2 (row fraction, may be fractional)
+  int hDir; // +1 →, -1 ←
+  int vDir; // -1 up, 0 straight, +1 down
   Duck(
       {required this.dx,
       required this.dy,
@@ -20,17 +20,18 @@ class Duck {
 }
 
 class Explosion {
-  double dx;
-  double dy;
+  double dx; // exact x (fraction of width)
+  double dy; // exact y (0..2 range)
   int ticksLeft;
   Explosion(this.dx, this.dy, this.ticksLeft);
 }
 
 class HuntScreen extends StatefulWidget {
   final WebSocket webSocket;
-  final bool autoStart;
+  final bool autoStart; // New param to control whether game starts immediately
 
-  const HuntScreen({super.key, required this.webSocket, this.autoStart = true});
+  const HuntScreen(
+      {super.key, required this.webSocket, this.autoStart = false});
 
   @override
   State<HuntScreen> createState() => _HuntScreenState();
@@ -44,8 +45,8 @@ class _HuntScreenState extends State<HuntScreen> {
   static const double _speedIncrementPerSecond = 0.00025;
   static const double _verticalFactor = 0.4;
   static const int _boomTicks = 10;
-  static const double _rightOff = 1.30;
-  static const double _leftOff = -0.30;
+  static const double _rightOff = 1.30; // remove at 130 % width
+  static const double _leftOff = -0.30; // remove at −30 % width
 
   final Random _rand = Random();
 
@@ -59,15 +60,20 @@ class _HuntScreenState extends State<HuntScreen> {
   Timer? _spawnTimer;
   Timer? _moveTimer;
   Timer? _countdownTimer;
-
-  // For mapping coordinates from WebSocket messages to local tap positions
   Size? _playAreaSize;
+
+  final List<Offset> _shootPoints =
+      []; // List to hold positions of the shoot points
+  static const int _shootDuration =
+      20; // Number of frames the shoot point will be shown
 
   @override
   void initState() {
     super.initState();
     _listenToWebSocket();
-    if (widget.autoStart) _startGame();
+    if (widget.autoStart) {
+      _startGame();
+    }
   }
 
   void _listenToWebSocket() {
@@ -79,26 +85,42 @@ class _HuntScreenState extends State<HuntScreen> {
             decodedMessage['message'].startsWith('shoot')) {
           final parts = decodedMessage['message'].split(',');
           if (parts.length == 3) {
-            final x = double.tryParse(parts[1]);
-            final y = double.tryParse(parts[2]);
-            if (x != null && y != null && _playAreaSize != null) {
-              _handleRemoteShoot(x, y);
+            final normX = double.tryParse(parts[1]);
+            final normY = double.tryParse(parts[2]);
+            if (normX != null && normY != null && _playAreaSize != null) {
+              _handleRemoteShoot(normX, normY);
             }
           }
         }
       } catch (e) {
-        // ignore or log error
+        // Ignore JSON errors
       }
     });
   }
 
-  void _handleRemoteShoot(double x, double y) {
-    // Convert bottom-left origin (x,y) to top-left origin (local position)
-    // Assuming y=0 is bottom, so local y = height - y
-    final localY = _playAreaSize!.height - y;
-    final localX = x;
+  void _handleRemoteShoot(double normX, double normY) {
+    if (normX < 0 || normX > 1 || normY < 0 || normY > 1) {
+      debugPrint(
+          'Ignored shoot command with out-of-bounds coordinates: ($normX, $normY)');
+      return;
+    }
 
+    final localX = normX * _playAreaSize!.width;
+    final localY = (1 - normY) * _playAreaSize!.height; // flip y axis
     final localPosition = Offset(localX, localY);
+
+    // Add the shoot point and set a timer to remove it
+    setState(() {
+      _shootPoints.add(localPosition);
+    });
+
+    // Remove the shoot point after _shootDuration frames
+    Future.delayed(const Duration(milliseconds: _shootDuration * 30), () {
+      setState(() {
+        _shootPoints.remove(localPosition);
+      });
+    });
+
     _handleTap(localPosition, _playAreaSize!);
   }
 
@@ -261,6 +283,15 @@ class _HuntScreenState extends State<HuntScreen> {
                       height: cellH,
                       child: const Center(
                           child: Text('💥', style: TextStyle(fontSize: 32))),
+                    )),
+                // Draw the red circles for the shoot points
+                ..._shootPoints.map((shootPoint) => Positioned(
+                      left: shootPoint.dx - 10, // Adjust for the circle radius
+                      top: shootPoint.dy - 10,
+                      child: const CircleAvatar(
+                        radius: 10,
+                        backgroundColor: Colors.red,
+                      ),
                     )),
                 Positioned(
                   top: 8,
